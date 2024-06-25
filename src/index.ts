@@ -1,4 +1,4 @@
-import {createElement, VirtualNode, VirtualNodeType} from "./virtual-node";
+import {createElement, initVirtualTree } from "./virtual-node";
 
 const world = 'World';
 
@@ -6,49 +6,29 @@ export function hello(word: string = world): string {
     return `Hello ${word}`;
 }
 
-console.log(hello());
-
-const rootNode: VirtualNode = {
-    type: VirtualNodeType.Div,
-    attributes: {},
-    props: { },
-    key: 'k0',
-    children: []
-};
-
-for (let i = 1; i < 5; i++) {
-    if (i % 2 == 0) {
-        rootNode.children.push({
-            type: VirtualNodeType.Div,
-            attributes: {},
-            props: {},
-            key: `k${i}`,
-            children: []
-        })
-    } else {
-        rootNode.children.push({
-            type: VirtualNodeType.Text,
-            attributes: { },
-            props: { },
-            key: `k${i}`,
-            children: [],
-            textContent: `text k${i}`
-        })
-    }
-}
-
 const root = document.getElementById("root");
+const createTypeTemplate = initVirtualTree();
+let previousTree;
 
 if (root) {
-    console.log(root.attributes);
-    rootNode.attributes = Object.assign(
-        {},
-        ...Array.from(root.attributes, ({name, value}) => ({[name]: value})) as any
-    );
+    const createRootNode = createTypeTemplate("div");
+    let rootNode = createRootNode(null, [hello(), " root"]);
 
+    // first mount
     setTimeout(() => {
-        root.replaceWith(createElement(rootNode));
-    }, 3000);
+        for (let i = 1; i < 5; i++) {
+            const createTextTemplate = createTypeTemplate("text");
+            const text = createTextTemplate(null, `text k${i}`);
+
+            const creatDiv = createTypeTemplate("div");
+            const wrapper = creatDiv(null, text);
+            rootNode = createRootNode(null, [...rootNode.children, wrapper]);
+        }
+        root.appendChild(createElement(rootNode));
+        previousTree = rootNode;
+    }, 2000);
+
+
 } else {
     console.log('null');
 }
