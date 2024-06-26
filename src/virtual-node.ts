@@ -17,6 +17,11 @@ interface PatchCommand {
     lateKey: string
 }
 
+export interface ITemplateFunction<ValueType>
+{
+    (props: { [key: string]: any } | null, ...args: any): ValueType;
+}
+
 export interface JNode {
     type: VirtualNodeType
     key: string,
@@ -51,7 +56,14 @@ function stringToVirtualTextNode(key: number, string: string): VirtualTextNode {
     };
 }
 
-function virtualTextNode(nodeKey: string, children: string): VirtualTextNode {
+function virtualTextNode(nodeKey: string, children: string|string[]): VirtualTextNode {
+    if (Array.isArray(children)) {
+        return {
+            type: VirtualNodeType.Text,
+            key : nodeKey,
+            textContent : children.join("\n"),
+        }
+    }
     return {
         type: VirtualNodeType.Text,
         key : nodeKey,
@@ -68,11 +80,12 @@ function virtualNode(type: VirtualNodeType, nodeKey: string, props=null, childre
     }
 }
 
-export function initVirtualTree(): any  {
+// TODO: 일단 분리해 놨는데 특별히 이유가 안 생기면 합치기
+export function initVirtualTree(): any {
     let key = 0;
-    return function createTypeTemplate(type: VirtualNodeType): [string, any] {
+    return function createTypeTemplate(type: VirtualNodeType): [string, ITemplateFunction<VirtualNode | VirtualTextNode>] {
         const nodeKey = createNodeKey(key++);
-        const wrapRawString = (children: any[]): JNode[] =>
+        const wrapRawString = (children: any[]): JNode[] => // string or JNode
             children.map(child => (typeof child === "string"
                 ? stringToVirtualTextNode(key++, child)
                 : child)
@@ -80,9 +93,10 @@ export function initVirtualTree(): any  {
 
         return [
             nodeKey,
-            function createVirtualNode (props = null, ...children: any): JNode {
+            //TODO: Type '{ [key: string]: any; } | null' is not assignable to type 'null' ??
+            function createVirtualNode(props: any , ...children: any): VirtualNode | VirtualTextNode {
                 if (type === VirtualNodeType.Text) {
-                    return virtualTextNode(nodeKey, children[0]);
+                    return virtualTextNode(nodeKey, children);
                 }
 
                 return virtualNode(type, nodeKey, props, wrapRawString(children));
@@ -139,6 +153,8 @@ export function diff(previousRoot: VirtualNode, latestRoot: VirtualNode) {
 
     const prevChildren = previousRoot.children;
     const lateChildren = latestRoot.children;
+
+
 
 
     return diff;
