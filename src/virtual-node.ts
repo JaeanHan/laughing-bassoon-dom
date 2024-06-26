@@ -17,67 +17,89 @@ interface PatchCommand {
     lateKey: string
 }
 
-// export interface VirtualTextNode {
-//     type: VirtualNodeType
-//     key: string,
-//     textContent : string
-// }
-
-export interface VirtualNode {
+export interface JNode {
     type: VirtualNodeType
     key: string,
+}
+
+export interface VirtualNode extends JNode{
     props: { [key: string]: any } | null
-    children: VirtualNode[]
+    children: JNode[]
+}
+
+export interface VirtualTextNode extends JNode {
+    textContent : string
+}
+
+export function isInstanceOfVirtualNode(node: JNode): node is VirtualNode {
+    return node.type === VirtualNodeType.Div;
+}
+
+export function isInstanceOfVirtualTextNode(node: JNode): node is VirtualTextNode {
+    return node.type === VirtualNodeType.Text
+}
+
+function createNodeKey(key: number): string {
+    return `k${key}`;
+}
+
+function stringToVirtualTextNode(key: number, string: string): VirtualTextNode {
+    return {
+        type : VirtualNodeType.Text,
+        key: createNodeKey(key),
+        textContent : string
+    };
+}
+
+function virtualTextNode(nodeKey: string, children: string): VirtualTextNode {
+    return {
+        type: VirtualNodeType.Text,
+        key : nodeKey,
+        textContent : children,
+    }
+}
+
+function virtualNode(type: VirtualNodeType, nodeKey: string, props=null, children: JNode[]): VirtualNode {
+    return {
+        type : type,
+        key : nodeKey,
+        props : props,
+        children : children,
+    }
 }
 
 export function initVirtualTree(): any  {
     let key = 0;
-    return function createTypeTemplate(type: VirtualNodeType): any {
-        const nodeKey = `k${key++}`;
-        //TODO : args
-        return function createVirtualNode (props = null, children = []): VirtualNode {
-            if (type === VirtualNodeType.Text) {
-                return {
-                    type: type,
-                    key : nodeKey,
-                    children : children,
-                    props : null
-                }
-            }
-            if (!Array.isArray(children)) {
-                children = [children];
-            }
+    return function createTypeTemplate(type: VirtualNodeType): [string, any] {
+        const nodeKey = createNodeKey(key++);
+        const wrapRawString = (children: any[]): JNode[] =>
+            children.map(child => (typeof child === "string"
+                ? stringToVirtualTextNode(key++, child)
+                : child)
+        );
 
-            return {
-                type : type,
-                key : nodeKey,
-                props : props,
-                children : children.map(child => {
-                    return typeof child === "string" ? {
-                        type : VirtualNodeType.Text,
-                        key : `k${key++}`,
-                        props : null,
-                        children : child
-                    } : child;
-                }),
+        return [
+            nodeKey,
+            function createVirtualNode (props = null, ...children: any): JNode {
+                if (type === VirtualNodeType.Text) {
+                    return virtualTextNode(nodeKey, children[0]);
+                }
+
+                return virtualNode(type, nodeKey, props, wrapRawString(children));
             }
-        }
+        ];
     }
 }
 
 export const keyElementMap = new Map<string, HTMLElement>();
 export const keyAttributeMap = new Map<string, string[]>();
 
-export function createElement(vNode: VirtualNode): HTMLElement | Text {
-    const { type, key, props, children = [] } = vNode;
-    if (type === VirtualNodeType.Text) {
-        if (!Array.isArray(children)) {
-            return document.createTextNode(children?? "");
-        }
-        else {
-            console.log("how could node type text children not be string", children);
-        }
+export function createElement(vNode: JNode): HTMLElement | Text {
+    if (isInstanceOfVirtualTextNode(vNode)) {
+        return document.createTextNode(vNode?.textContent ?? "\n");
     }
+
+    const { type, key, props, children = [] } = vNode as VirtualNode;
 
     const element = document.createElement(type);
 
@@ -115,41 +137,9 @@ export function diff(previousRoot: VirtualNode, latestRoot: VirtualNode) {
         }];
     }
 
-    // const prevChildren = previousRoot.children;
-    // const lateChildren = latestRoot.children;
-    // if (prevChildren.length === lateChildren.length) {
-    //     for (let i = 0; i < prevChildren.length; i++) {
-    //         const result = diffChildren(prevChildren[i], lateChildren[i]);
-    //         if (result) {
-    //             diff.push(result);
-    //         }
-    //     }
-    // }
+    const prevChildren = previousRoot.children;
+    const lateChildren = latestRoot.children;
 
-    // const minLength = Math.min(previousRoot.children.length, latestRoot.children.length);
-    // const maxLength = Math.max(previousRoot.children.length, latestRoot.children.length);
-
-    // for (let i = 0; i < minLength; i++) {
-    //     const result = diffChildren(prevChildren[i], lateChildren[i]);
-    //     if (result) {
-    //         diff.push(result);
-    //     }
-    // }
-
-    // for (let i = minLength; i < maxLength; i++) {
-    //     if (prevChildren.length === minLength) {
-    //         diff.push({
-    //             type: PatchCommand.Append,
-    //             prevKey: "",
-    //             lateKey: lateChildren[i].key
-    //         });
-    //     }
-    //     diff.push({
-    //         type: PatchCommand.Remove,
-    //         prevKey: prevChildren[i].key,
-    //         lateKey: "",
-    //     });
-    // }
 
     return diff;
 }
