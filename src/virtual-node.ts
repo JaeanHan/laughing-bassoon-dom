@@ -1,20 +1,25 @@
+export const keyAttributeMap = new Map<string, string[]>();
+export const keyVirtualNodeMap = new Map<string, VirtualNode>();
+export const keyElementMap = new Map<string, HTMLElement>();
+
 export const VirtualNodeType = {
     Div: "div",
     Text: "text",
 };
 type VirtualNodeType = typeof VirtualNodeType[keyof typeof VirtualNodeType];
 
-const PatchCommand = {
+const PatchCommandType = {
     Append: 'append',
     Replace: "replace",
     Remove: "remove"
 };
-type PatchCommandType = typeof PatchCommand[keyof typeof PatchCommand];
+type PatchCommandType = typeof PatchCommandType[keyof typeof PatchCommandType];
 
 interface PatchCommand {
     type: PatchCommandType
-    prevKey: string
-    lateKey: string
+    parentKey: string
+    prevKey: string | null
+    lateKey: string | null
 }
 
 export interface ITemplateFunction<ValueType>
@@ -33,7 +38,7 @@ export interface VirtualNode extends JNode{
 }
 
 export interface VirtualTextNode extends JNode {
-    textContent : string
+     children: string[]
 }
 
 export function isInstanceOfVirtualNode(node: JNode): node is VirtualNode {
@@ -48,26 +53,11 @@ function createNodeKey(key: number): string {
     return `k${key}`;
 }
 
-function stringToVirtualTextNode(key: number, string: string): VirtualTextNode {
-    return {
-        type : VirtualNodeType.Text,
-        key: createNodeKey(key),
-        textContent : string
-    };
-}
-
 function virtualTextNode(nodeKey: string, children: string|string[]): VirtualTextNode {
-    if (Array.isArray(children)) {
-        return {
-            type: VirtualNodeType.Text,
-            key : nodeKey,
-            textContent : children.join("\n"),
-        }
-    }
     return {
         type: VirtualNodeType.Text,
         key : nodeKey,
-        textContent : children,
+        children : Array.isArray(children)? children : [children],
     }
 }
 
@@ -78,6 +68,14 @@ function virtualNode(type: VirtualNodeType, nodeKey: string, props=null, childre
         props : props,
         children : children,
     }
+}
+
+function stringToVirtualTextNode(key: number, string: string): VirtualTextNode {
+    return {
+        type : VirtualNodeType.Text,
+        key: createNodeKey(key),
+        children : [string]
+    };
 }
 
 // TODO: 일단 분리해 놨는데 특별히 이유가 안 생기면 합치기
@@ -98,21 +96,26 @@ export function initVirtualTree(): any {
                 if (type === VirtualNodeType.Text) {
                     return virtualTextNode(nodeKey, children);
                 }
+                const vNode = virtualNode(type, nodeKey, props, wrapRawString(children));
+                // children nested 안되게 하고 싶은데 children.map(child => child.key)
+                keyVirtualNodeMap.set(nodeKey, vNode);
 
-                return virtualNode(type, nodeKey, props, wrapRawString(children));
+                return vNode;
             }
         ];
     }
 }
 
-export const keyElementMap = new Map<string, HTMLElement>();
-export const keyAttributeMap = new Map<string, string[]>();
-
-export function createElement(vNode: JNode): HTMLElement | Text {
+export function createElement(vNode: JNode): HTMLElement | DocumentFragment {
     if (isInstanceOfVirtualTextNode(vNode)) {
-        return document.createTextNode(vNode?.textContent ?? "\n");
-    }
+        const documentFragment = document.createDocumentFragment();
+        vNode.children.forEach(text => {
+            const textNode = document.createTextNode(text ?? "\n");
+            documentFragment.appendChild(textNode);
+        })
 
+        return documentFragment;
+    }
     const { type, key, props, children = [] } = vNode as VirtualNode;
 
     const element = document.createElement(type);
@@ -137,53 +140,90 @@ export function createElement(vNode: JNode): HTMLElement | Text {
     return element;
 }
 
-export function diff(previousRoot: VirtualNode, latestRoot: VirtualNode) {
-    const diff: PatchCommand[] = [];
+export function diff(previousRoot: VirtualNode | VirtualTextNode, latestRoot: VirtualNode | VirtualTextNode, parentKey="root"): PatchCommand[] {
+    const diffs: PatchCommand[] = [];
     if ( previousRoot.type !== latestRoot.type
         || previousRoot.key !== latestRoot.key
         // || previousRoot.props !== latestRoot.props
     ) {
-        return [{
-            type : PatchCommand.Replace,
-            parentKey : "root",
+        diffs.push({
+            type : PatchCommandType.Replace,
+            parentKey : parentKey,
             prevKey : previousRoot.key,
             lateKey : latestRoot.key
-        }];
+        } as PatchCommand);
+
+        return diffs;
+    }
+
+    if (isInstanceOfVirtualTextNode(previousRoot) || isInstanceOfVirtualTextNode(latestRoot)) {
+        // to be implemented. . .
+        return diffs;
     }
 
     const prevChildren = previousRoot.children;
     const lateChildren = latestRoot.children;
+    const prevLen = prevChildren.length;
+    const lateLen = lateChildren.length;
 
+    // 하단 트리 구조가 다름
+    if (prevLen !== lateLen) {
+        // 왜 안됌?
+        // const prevKeys = new Set(prevChildren.map(child => child.key));
+        // const lateKeys = new Set(lateChildren.map(child => child.key));
+        // const diffFound = lateChildren.difference(prevKeys);
+        const prevKeys = prevChildren.map(child => child.key);
+        const lateKeys = lateChildren.map(child => child.key);
 
+        if (prevLen < lateLen) {
+            const prevKeys = new Set(prevChildren.map(child => child.key));
+            lateKeys
+                .filter(key => !prevKeys.has(key))
+                .forEach(newKey => diffs.push({
+                    type: PatchCommandType.Append,
+                    parentKey : latestRoot.key,
+                    prevKey : null,
+                    lateKey : newKey
+                }));
 
+            return diffs;
+        }
 
-    return diff;
-}
+        if (prevLen > lateLen) {
+            const lateKeys = new Set(lateChildren.map(child => child.key));
+            prevKeys
+                .filter(key => !lateKeys.has(key))
+                .forEach(removedKey => diffs.push({
+                    type: PatchCommandType.Remove,
+                    parentKey : previousRoot.key,
+                    prevKey : removedKey,
+                    lateKey : null
+                }));
 
-function diffChildren(previousNode: VirtualNode, latestNode: VirtualNode): PatchCommand | null {
-    if (
-        previousNode.type !== latestNode.type
-        || previousNode.key !== latestNode.key
-    ) {
-        return {
-            type : PatchCommand.Replace,
-            prevKey : previousNode.key,
-            lateKey : latestNode.key
+            return diffs;
         }
     }
-    return {
-        type : PatchCommand.Replace,
-        prevKey : previousNode.key,
-        lateKey : latestNode.key
+    // 같음
+    if (previousRoot.key !== latestRoot.key) {
+        alert(`???? ${previousRoot.key}, ${latestRoot.key}`);
     }
-    // const prevChildren = previousNode.children;
-    // const lateChildren = latestNode.children;
-    // if (prevChildren.length === lateChildren.length) {
-    //     for (let i = 0; i < prevChildren.length; i++) {
-    //         const result = diffChildren(prevChildren[i], lateChildren[i]);
-    //         if (result) {
-    //             diff.push(result);
-    //         }
-    //     }
-    // }
+
+    for (let i = 0; i < lateLen; i++) {
+        diffs.push(...diff(prevChildren[i] as VirtualNode, lateChildren[i] as VirtualNode, latestRoot.key));
+    }
+
+    return diffs;
+}
+
+export function patch(patches: PatchCommand[]) {
+    console.log('patch', patches);
+    const documentFragment = document.createDocumentFragment();
+    patches.forEach((patch) => {
+        if (patch.type === PatchCommandType.Append) {
+            const parent = keyVirtualNodeMap.get(patch.parentKey);
+
+
+        }
+    });
+
 }
