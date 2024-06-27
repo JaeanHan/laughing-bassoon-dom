@@ -80,22 +80,28 @@ function stringToVirtualTextNode(createNodeKey: IKeyFunction<number>, key: numbe
     };
 }
 
-function initNodeKey() : IKeyFunction<number> {
+function initTreeKeyNamespace() : () => IKeyFunction<number> {
     let v = 0;
-    return function (key: number): string {
-        return `v${v++}-${key}`;
+    return function (): IKeyFunction<number> {
+        v++;
+        return function (key: number): string {
+            return `v${v}-${key}`;
+        }
     }
 }
 
-// TODO: 일단 분리해 놨는데 특별히 이유가 안 생기면 합치기
+const initTreeKey: () => IKeyFunction<number> = initTreeKeyNamespace();
+
 export function initVirtualTree(): any {
-    let key = 0
-    const createNodeKey = initNodeKey();
+    let idx = 0
+    const createNodeKey = initTreeKey();
+    console.log('??');
+    // TODO: 일단 분리해 놨는데 특별히 이유가 안 생기면 합치기
     return function createTypeTemplate(type: VirtualNodeType): [string, ITemplateFunction<VirtualNode | VirtualTextNode>] {
-        const nodeKey = createNodeKey(key++);
+        const nodeKey = createNodeKey(idx++);
         const wrapRawString = (children: any[]): JNode[] => // string or JNode
             children.map(child => (typeof child === "string"
-                ? stringToVirtualTextNode(createNodeKey, key++, child)
+                ? stringToVirtualTextNode(createNodeKey, idx++, child)
                 : child)
         );
 
@@ -109,6 +115,7 @@ export function initVirtualTree(): any {
                 const vNode = virtualNode(type, nodeKey, props, wrapRawString(children));
                 // children nested 안되게 하고 싶은데 children.map(child => child.key)
                 keyVirtualNodeMap.set(nodeKey, vNode);
+                console.log(vNode);
 
                 return vNode;
             }
@@ -178,10 +185,6 @@ export function diff(previousRoot: VirtualNode | VirtualTextNode, latestRoot: Vi
 
     // 하단 트리 구조가 다름
     if (prevLen !== lateLen) {
-        // 왜 안됌?
-        // const prevKeys = new Set(prevChildren.map(child => child.key));
-        // const lateKeys = new Set(lateChildren.map(child => child.key));
-        // const diffFound = lateChildren.difference(prevKeys);
         const prevKeys = prevChildren.map(child => child.key);
         const lateKeys = lateChildren.map(child => child.key);
 
@@ -233,9 +236,10 @@ export function patch(patches: PatchCommand[]) {
 
         if (patch.type === PatchCommandType.Append) {
             const parent = keyVirtualNodeMap.get(patch.parentKey);
-            const newChild = keyVirtualNodeMap.get(patch.lateKey as string);
+            // const vChild = keyVirtualNodeMap.get(patch.lateKey as string);
+            // const child = document.createElement(vChild.type);
 
-
+            // for (let i = 0; i < )
 
 
         }
