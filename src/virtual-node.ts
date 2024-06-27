@@ -1,3 +1,4 @@
+// TODO : 간단하게라도 구현 자체가 완료 되면 파일 나누기
 export const keyAttributeMap = new Map<string, string[]>();
 export const keyVirtualNodeMap = new Map<string, VirtualNode>();
 export const keyElementMap = new Map<string, HTMLElement>();
@@ -27,6 +28,11 @@ export interface ITemplateFunction<ValueType>
     (props: { [key: string]: any } | null, ...args: any): ValueType;
 }
 
+export interface IKeyFunction<ValueType>
+{
+    (key: ValueType): string;
+}
+
 export interface JNode {
     type: VirtualNodeType
     key: string,
@@ -49,10 +55,6 @@ export function isInstanceOfVirtualTextNode(node: JNode): node is VirtualTextNod
     return node.type === VirtualNodeType.Text
 }
 
-function createNodeKey(key: number): string {
-    return `k${key}`;
-}
-
 function virtualTextNode(nodeKey: string, children: string|string[]): VirtualTextNode {
     return {
         type: VirtualNodeType.Text,
@@ -70,7 +72,7 @@ function virtualNode(type: VirtualNodeType, nodeKey: string, props=null, childre
     }
 }
 
-function stringToVirtualTextNode(key: number, string: string): VirtualTextNode {
+function stringToVirtualTextNode(createNodeKey: IKeyFunction<number>, key: number, string: string): VirtualTextNode {
     return {
         type : VirtualNodeType.Text,
         key: createNodeKey(key),
@@ -78,14 +80,22 @@ function stringToVirtualTextNode(key: number, string: string): VirtualTextNode {
     };
 }
 
+function initNodeKey() : IKeyFunction<number> {
+    let v = 0;
+    return function (key: number): string {
+        return `v${v++}-${key}`;
+    }
+}
+
 // TODO: 일단 분리해 놨는데 특별히 이유가 안 생기면 합치기
 export function initVirtualTree(): any {
-    let key = 0;
+    let key = 0
+    const createNodeKey = initNodeKey();
     return function createTypeTemplate(type: VirtualNodeType): [string, ITemplateFunction<VirtualNode | VirtualTextNode>] {
         const nodeKey = createNodeKey(key++);
         const wrapRawString = (children: any[]): JNode[] => // string or JNode
             children.map(child => (typeof child === "string"
-                ? stringToVirtualTextNode(key++, child)
+                ? stringToVirtualTextNode(createNodeKey, key++, child)
                 : child)
         );
 
@@ -219,8 +229,13 @@ export function patch(patches: PatchCommand[]) {
     console.log('patch', patches);
     const documentFragment = document.createDocumentFragment();
     patches.forEach((patch) => {
+        const parentEl = keyElementMap.get(patch.parentKey);
+
         if (patch.type === PatchCommandType.Append) {
             const parent = keyVirtualNodeMap.get(patch.parentKey);
+            const newChild = keyVirtualNodeMap.get(patch.lateKey as string);
+
+
 
 
         }
