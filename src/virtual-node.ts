@@ -1,6 +1,6 @@
 // TODO : 간단하게라도 구현 자체가 완료 되면 파일 나누기
 export const keyAttributeMap = new Map<string, string[]>();
-export const keyVirtualNodeMap = new Map<string, VirtualNode>();
+export const keyVirtualNodeMap = new Map<string, VirtualNode | VirtualTextNode>();
 export const keyElementMap = new Map<string, HTMLElement>();
 
 export const VirtualNodeType = {
@@ -36,15 +36,16 @@ export interface IKeyFunction<ValueType>
 export interface JNode {
     type: VirtualNodeType
     key: string,
+    children: string[]
+
 }
 
 export interface VirtualNode extends JNode{
     props: { [key: string]: any } | null
-    children: JNode[]
 }
 
 export interface VirtualTextNode extends JNode {
-     children: string[]
+    // children: string[]
 }
 
 export function isInstanceOfVirtualNode(node: JNode): node is VirtualNode {
@@ -63,21 +64,13 @@ function virtualTextNode(nodeKey: string, children: string|string[]): VirtualTex
     }
 }
 
-function virtualNode(type: VirtualNodeType, nodeKey: string, props=null, children: JNode[]): VirtualNode {
+function virtualNode(type: VirtualNodeType, nodeKey: string, props=null, children: string[]): VirtualNode {
     return {
         type : type,
         key : nodeKey,
         props : props,
         children : children,
     }
-}
-
-function stringToVirtualTextNode(createNodeKey: IKeyFunction<number>, key: number, string: string): VirtualTextNode {
-    return {
-        type : VirtualNodeType.Text,
-        key: createNodeKey(key),
-        children : [string]
-    };
 }
 
 function initTreeKeyNamespace() : () => IKeyFunction<number> {
@@ -92,30 +85,35 @@ function initTreeKeyNamespace() : () => IKeyFunction<number> {
 
 const initTreeKey: () => IKeyFunction<number> = initTreeKeyNamespace();
 
+function extractKeyAndText(children: (string | JNode)[]) {
+    return children.map((child: string | JNode) => {
+        if (typeof child === "string") {
+            return child;
+        }
+
+        return child.key
+    });
+}
+
 export function initVirtualTree(): any {
     let idx = 0
     const createNodeKey = initTreeKey();
-    console.log('??');
     // TODO: 일단 분리해 놨는데 특별히 이유가 안 생기면 합치기
     return function createTypeTemplate(type: VirtualNodeType): [string, ITemplateFunction<VirtualNode | VirtualTextNode>] {
         const nodeKey = createNodeKey(idx++);
-        const wrapRawString = (children: any[]): JNode[] => // string or JNode
-            children.map(child => (typeof child === "string"
-                ? stringToVirtualTextNode(createNodeKey, idx++, child)
-                : child)
-        );
 
         return [
             nodeKey,
             //TODO: Type '{ [key: string]: any; } | null' is not assignable to type 'null' ??
             function createVirtualNode(props: any , ...children: any): VirtualNode | VirtualTextNode {
                 if (type === VirtualNodeType.Text) {
-                    return virtualTextNode(nodeKey, children);
+                    const vTextNode =  virtualTextNode(nodeKey, children);
+                    keyVirtualNodeMap.set(nodeKey, vTextNode)
+
+                    return vTextNode;
                 }
-                const vNode = virtualNode(type, nodeKey, props, wrapRawString(children));
-                // children nested 안되게 하고 싶은데 children.map(child => child.key)
+                const vNode = virtualNode(type, nodeKey, props, extractKeyAndText(children));
                 keyVirtualNodeMap.set(nodeKey, vNode);
-                console.log(vNode);
 
                 return vNode;
             }
@@ -133,11 +131,11 @@ export function createElement(vNode: JNode): HTMLElement | DocumentFragment {
 
         return documentFragment;
     }
+
     const { type, key, props, children = [] } = vNode as VirtualNode;
-
     const element = document.createElement(type);
-
     keyElementMap.set(key, element);
+
     // Object
     //     .entries(keyAttributeMap.get(key))
     //     .forEach(([attr, value]) => element.setAttribute(attr, value));
@@ -145,11 +143,16 @@ export function createElement(vNode: JNode): HTMLElement | DocumentFragment {
     if (children) {
         children
             .map(child => {
-                const childEl = createElement(child);
-                if (child.type !== VirtualNodeType.Text) {
-                    keyElementMap.set(child.key, childEl as HTMLElement);
+                if (typeof child === "string") {
+                    const vTextNode = keyVirtualNodeMap.get(child);
+                    if (vTextNode) {
+                        return createElement(vTextNode);
+                    }
+
+                    return document.createTextNode(child);
                 }
-                return childEl;
+
+                return createElement(child);
             })
             .forEach(child => element.appendChild(child));
     }
@@ -178,23 +181,25 @@ export function diff(previousRoot: VirtualNode | VirtualTextNode, latestRoot: Vi
         return diffs;
     }
 
-    const prevChildren = previousRoot.children;
-    const lateChildren = latestRoot.children;
-    const prevLen = prevChildren.length;
-    const lateLen = lateChildren.length;
+    const pRoot:VirtualNode = previousRoot;
+    const lRoot:VirtualNode = latestRoot;
+    const prevChildrenKeys = pRoot.children;
+    const lateChildrenKeys = lRoot.children;
+    const prevLen = prevChildrenKeys.length;
+    const lateLen = lateChildrenKeys.length;
+
+    const prevChildren = prevChildrenKeys.map(childKey => keyVirtualNodeMap.get(childKey));
+    const lateChildren = lateChildrenKeys.map(childKey => keyVirtualNodeMap.get(childKey));
 
     // 하단 트리 구조가 다름
     if (prevLen !== lateLen) {
-        const prevKeys = prevChildren.map(child => child.key);
-        const lateKeys = lateChildren.map(child => child.key);
-
         if (prevLen < lateLen) {
-            const prevKeys = new Set(prevChildren.map(child => child.key));
-            lateKeys
+            const prevKeys = new Set(prevChildrenKeys);
+            lateChildrenKeys
                 .filter(key => !prevKeys.has(key))
                 .forEach(newKey => diffs.push({
                     type: PatchCommandType.Append,
-                    parentKey : latestRoot.key,
+                    parentKey : lRoot.key,
                     prevKey : null,
                     lateKey : newKey
                 }));
@@ -203,12 +208,12 @@ export function diff(previousRoot: VirtualNode | VirtualTextNode, latestRoot: Vi
         }
 
         if (prevLen > lateLen) {
-            const lateKeys = new Set(lateChildren.map(child => child.key));
-            prevKeys
+            const lateKeys = new Set(lateChildrenKeys);
+            prevChildrenKeys
                 .filter(key => !lateKeys.has(key))
                 .forEach(removedKey => diffs.push({
                     type: PatchCommandType.Remove,
-                    parentKey : previousRoot.key,
+                    parentKey : pRoot.key,
                     prevKey : removedKey,
                     lateKey : null
                 }));
@@ -217,12 +222,12 @@ export function diff(previousRoot: VirtualNode | VirtualTextNode, latestRoot: Vi
         }
     }
     // 같음
-    if (previousRoot.key !== latestRoot.key) {
-        alert(`???? ${previousRoot.key}, ${latestRoot.key}`);
+    if (pRoot.key !== lRoot.key) {
+        alert(`???? ${pRoot.key}, ${lRoot.key}`);
     }
 
     for (let i = 0; i < lateLen; i++) {
-        diffs.push(...diff(prevChildren[i] as VirtualNode, lateChildren[i] as VirtualNode, latestRoot.key));
+        diffs.push(...diff(prevChildren[i] as VirtualNode, lateChildren[i] as VirtualNode, lRoot.key));
     }
 
     return diffs;
@@ -230,19 +235,35 @@ export function diff(previousRoot: VirtualNode | VirtualTextNode, latestRoot: Vi
 
 export function patch(patches: PatchCommand[]) {
     console.log('patch', patches);
-    const documentFragment = document.createDocumentFragment();
     patches.forEach((patch) => {
         const parentEl = keyElementMap.get(patch.parentKey);
+        if (!parentEl) {
+            console.warn('this really should never happen', patch.parentKey);
+            return;
+        }
 
         if (patch.type === PatchCommandType.Append) {
-            const parent = keyVirtualNodeMap.get(patch.parentKey);
-            // const vChild = keyVirtualNodeMap.get(patch.lateKey as string);
-            // const child = document.createElement(vChild.type);
+            const vChild = keyVirtualNodeMap.get(patch.lateKey as string);
+            if (!vChild) {
+                console.warn('vChild not found!', vChild);
+                return;
+            }
 
-            // for (let i = 0; i < )
+            const child = document.createElement(vChild.type);
+            const grandChildrenKeys = vChild.children;
 
+            grandChildrenKeys.forEach(grandChildKey => {
+                const vGrandChildren = keyVirtualNodeMap.get(grandChildKey);
+                if (vGrandChildren) {
+                    const childBranch = createElement(vGrandChildren);
+                    if (childBranch) {
+                        child.appendChild(childBranch);
+                    }
+                }
+            })
 
+            parentEl.appendChild(child);
         }
     });
-
 }
+

@@ -20,7 +20,7 @@ if (root) {
     setTimeout(() => {
         for (let i = 1; i < 5; i++) {
             const [textKey, createTextTemplate] = createTypeTemplate("text");
-            const text = createTextTemplate(null, `text k${i}`);
+            const text = createTextTemplate(null, `text ${textKey}`);
 
             const [divKey, creatDiv] = createTypeTemplate("div");
             const wrapper = creatDiv(null, text);
@@ -31,11 +31,11 @@ if (root) {
         root.appendChild(createElement(rootNode));
         previousTree = rootNode;
 
-        // append
+        // dom 추가
         setTimeout(() => {
             for (let i = 1; i < 5; i++) {
                 const [textKey, createTextTemplate] = createTypeTemplate("text");
-                const text = createTextTemplate(null, `text2 k${i}`);
+                const text = createTextTemplate(null, `text2 ${textKey}`);
 
                 const [divKey, creatDiv] = createTypeTemplate("div");
                 const wrapper = creatDiv(null, text);
