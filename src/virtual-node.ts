@@ -73,53 +73,66 @@ function virtualNode(type: VirtualNodeType, nodeKey: string, props=null, childre
     }
 }
 
+const secretKey = 'v';
+
 function initTreeKeyNamespace() : () => IKeyFunction<number> {
     let v = 0;
     return function (): IKeyFunction<number> {
-        v++;
+        // v++;
         return function (key: number): string {
-            return `v${v}-${key}`;
+            return `${secretKey}${v}-${key}`;
         }
     }
 }
 
 const initTreeKey: () => IKeyFunction<number> = initTreeKeyNamespace();
 
-function extractKeyAndText(children: (string | JNode)[]) {
-    return children.map((child: string | JNode) => {
-        if (typeof child === "string") {
-            return child;
-        }
-
-        return child.key
-    });
+function stringToVirtualTextNode(key: string, string: string): VirtualTextNode {
+    return {
+        type : VirtualNodeType.Text,
+        key: key,
+        children : [string]
+    };
 }
 
+
+// export function initVirtualTree(): (type: VirtualNodeType, props: any, ...children: any) => (VirtualNode | VirtualTextNode) {
 export function initVirtualTree(): any {
     let idx = 0
     const createNodeKey = initTreeKey();
-    // TODO: 일단 분리해 놨는데 특별히 이유가 안 생기면 합치기
-    return function createTypeTemplate(type: VirtualNodeType): [string, ITemplateFunction<VirtualNode | VirtualTextNode>] {
-        const nodeKey = createNodeKey(idx++);
+    function extractNodeKeys(children: (string | JNode)[]) {
+        return children.map((child: string | JNode) => {
+            if (typeof child === "string") {
+                if (!child.startsWith(secretKey)) {
+                    const vTextNode = stringToVirtualTextNode(createNodeKey(idx++), child);
+                    keyVirtualNodeMap.set(vTextNode.key, vTextNode);
 
-        return [
-            nodeKey,
-            //TODO: Type '{ [key: string]: any; } | null' is not assignable to type 'null' ??
-            function createVirtualNode(props: any , ...children: any): VirtualNode | VirtualTextNode {
-                if (type === VirtualNodeType.Text) {
-                    const vTextNode =  virtualTextNode(nodeKey, children);
-                    keyVirtualNodeMap.set(nodeKey, vTextNode)
-
-                    return vTextNode;
+                    return vTextNode.key;
                 }
-                const vNode = virtualNode(type, nodeKey, props, extractKeyAndText(children));
-                keyVirtualNodeMap.set(nodeKey, vNode);
-
-                return vNode;
+                return child;
             }
-        ];
+            return child.key
+        });
     }
+    // TODO : key 할당을 생성 순이 아니라 돔트리 다 만들고 할당. 키: (depth, props) => Hash(depth, props)?
+    return function createVirtualNode(type: VirtualNodeType, props: any, ...children: any): (VirtualNode | VirtualTextNode) {
+        const nodeKey = createNodeKey(idx++);
+        const vNode = virtualNode(type, nodeKey, props, extractNodeKeys(children));
+        keyVirtualNodeMap.set(nodeKey, vNode);
+
+        return vNode;
+    };
 }
+
+// export function recreateElement(key:string, props:any, ...children: any) {
+//     const vNode = keyVirtualNodeMap.get(key);
+//     if (isInstanceOfVirtualTextNode(vNode)) {
+//
+//     }
+//     children.forEach
+//     return
+//
+// }
 
 export function createElement(vNode: JNode): HTMLElement | DocumentFragment {
     if (isInstanceOfVirtualTextNode(vNode)) {
@@ -140,22 +153,15 @@ export function createElement(vNode: JNode): HTMLElement | DocumentFragment {
     //     .entries(keyAttributeMap.get(key))
     //     .forEach(([attr, value]) => element.setAttribute(attr, value));
 
-    if (children) {
-        children
-            .map(child => {
-                if (typeof child === "string") {
-                    const vTextNode = keyVirtualNodeMap.get(child);
-                    if (vTextNode) {
-                        return createElement(vTextNode);
-                    }
-
-                    return document.createTextNode(child);
-                }
-
-                return createElement(child);
-            })
-            .forEach(child => element.appendChild(child));
-    }
+    children.forEach(childKey => {
+        const childVNode = keyVirtualNodeMap.get(childKey) as JNode;
+        if (childVNode) {
+            const childElement = createElement(childVNode);
+            if (childElement) {
+                element.appendChild(childElement);
+            }
+        }
+    });
 
     return element;
 }
@@ -166,6 +172,7 @@ export function diff(previousRoot: VirtualNode | VirtualTextNode, latestRoot: Vi
         || previousRoot.key !== latestRoot.key
         // || previousRoot.props !== latestRoot.props
     ) {
+        console.log(previousRoot, latestRoot);
         diffs.push({
             type : PatchCommandType.Replace,
             parentKey : parentKey,

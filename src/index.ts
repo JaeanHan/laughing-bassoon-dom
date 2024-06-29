@@ -1,4 +1,4 @@
-import {createElement, diff, initVirtualTree, patch, VirtualNode, VirtualTextNode} from "./virtual-node";
+import {createElement, diff, initVirtualTree, patch, VirtualNode} from "./virtual-node";
 
 const world = 'World';
 
@@ -7,40 +7,33 @@ export function hello(word: string = world): string {
 }
 
 const root = document.getElementById("root");
-const createTypeTemplate = initVirtualTree();
+const createVirtualNode = initVirtualTree();
 let previousTree;
 
 if (root) {
-    const [key, createRootNode] = createTypeTemplate("div");
-    let rootNode = createRootNode(null, hello("root"));
+    const rootNode = createVirtualNode(
+        "div", null, hello("root"),
+        createVirtualNode("div", null, "hi", ` div1`),
+        createVirtualNode("div", null, "11", createVirtualNode("div", null, "22", createVirtualNode("div", null, "33"))),
+    );
     let rootNodeV1: VirtualNode | object;
     let rootNodeV2: VirtualNode | object;
 
     // first mount
     setTimeout(() => {
-        for (let i = 1; i < 5; i++) {
-            const [textKey, createTextTemplate] = createTypeTemplate("text");
-            const text = createTextTemplate(null, `text ${textKey}`);
-
-            const [divKey, creatDiv] = createTypeTemplate("div");
-            const wrapper = creatDiv(null, text);
-            rootNode = createRootNode(null, ...rootNode.children, wrapper);
-        }
         rootNodeV1 = structuredClone(rootNode);
-        console.log('v1', rootNodeV1);
+        console.log('v1', rootNode);
         root.appendChild(createElement(rootNode));
         previousTree = rootNode;
 
         // dom 추가
         setTimeout(() => {
-            for (let i = 1; i < 5; i++) {
-                const [textKey, createTextTemplate] = createTypeTemplate("text");
-                const text = createTextTemplate(null, `text2 ${textKey}`);
-
-                const [divKey, creatDiv] = createTypeTemplate("div");
-                const wrapper = creatDiv(null, text);
-                rootNode = createRootNode(null, ...rootNode.children, wrapper);
-            }
+            const createVirtualNode2 = initVirtualTree();
+            const rootNode = createVirtualNode2(
+                "div", null, hello("root"),
+                createVirtualNode2("div", null, "hi", ` div1`, createVirtualNode2("div", null, hello("root"))),
+                createVirtualNode2("div", null, "11", createVirtualNode2("div", null, "22", createVirtualNode2("div", null, "33"))),
+            );
 
             rootNodeV2 = structuredClone(rootNode);
             console.log('v2', rootNodeV2);
